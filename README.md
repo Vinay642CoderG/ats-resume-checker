@@ -11,8 +11,8 @@ Features:
 
 Installation and Setup:
 1. Clone the repository:
-    git clone <repository-url>
-    cd <repository-folder>
+    git clone https://github.com/Vinay642CoderG/ats-resume-checker.git
+    cd ats-resume-checker
 
 2. Create a virtual environment:
     python -m venv .env
