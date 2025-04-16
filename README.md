@@ -1,6 +1,5 @@
 # RESUME ATS CHECKER
 
-"""
 RESUME ATS CHECKER is an AI-powered recruitment tool designed to streamline resume evaluations by analyzing and scoring resumes against job descriptions. It provides actionable suggestions for resume improvements, ranks resumes based on ATS scores, and visualizes the data through graphical charts to help recruiters make data-driven hiring decisions.
 
 Features:
@@ -62,4 +61,4 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 License:
 This project is licensed under the MIT License.
-"""
+
