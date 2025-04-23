@@ -35,3 +35,6 @@ project/*.xlsx
 
 # Windows-specific files
 Thumbs.db
+
+# my files
+*.zip
