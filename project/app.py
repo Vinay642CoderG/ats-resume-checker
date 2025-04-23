@@ -8,6 +8,9 @@ from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 import time
 
+# Load spaCy's English model once (do this globally)
+nlp = spacy.load("en_core_web_sm")
+
 # --- Page Config & Custom CSS ---
 st.set_page_config(page_title="ATS Resume Checker",
                    page_icon="🚀", layout="wide")
@@ -70,9 +73,56 @@ def extract_text_from_pdf(file):
 
 
 def extract_keywords(text):
-    words = set(text.lower().split())
-    keywords = [w for w in words if w not in ENGLISH_STOP_WORDS and len(w) > 3]
-    return keywords
+    """
+    Extracts keywords from text, removing stop words, short words,
+    verbs, common nouns (NOUN), and proper nouns (PROPN) using spaCy.
+
+    Args:
+        text (str): The input text.
+        stop_words (set): A set of stop words to remove.
+
+    Returns:
+        list: A list of extracted keywords (lowercase).
+    """
+    # Process the text with spaCy
+    doc = nlp(text)
+
+    IGNORE_CUSTOM_KEYWORDS = ['structured',
+                              'structure', 'preferred', 'meaningful']
+
+    keywords = []
+    # Define the Part-of-Speech tags we want to remove
+    # 'VERB': Verbs
+    # 'NOUN': Common nouns
+    # 'PROPN': Proper nouns
+    pos_to_remove = {"VERB", "NOUN", "PROPN"}
+
+    for token in doc:
+        # Convert to lowercase for consistent comparison
+        token_text_lower = token.lower_
+
+        # Filter out punctuation, spaces, and words that are too short
+        if token.is_punct or token.is_space or len(token_text_lower) <= 3:
+            continue
+
+        # Filter out words based on their Part-of-Speech tag
+        if token.pos_ in pos_to_remove:
+            continue
+
+        # Filter out stop words using the provided set
+        if token_text_lower in ENGLISH_STOP_WORDS:
+            continue
+
+        # Filter out stop words using the provided set
+        if token_text_lower in IGNORE_CUSTOM_KEYWORDS:
+            continue
+
+        # If the token passed all filters, add its lowercase text to the keywords list
+        keywords.append(token_text_lower)
+
+    # The original function used set() on the initial split,
+    # implicitly making keywords unique. Let's maintain uniqueness.
+    return list(set(keywords))
 
 
 def rank_resumes(job_description, resumes, model):
@@ -90,32 +140,77 @@ def rank_resumes(job_description, resumes, model):
     return similarity_scores.tolist()
 
 
-nlp = spacy.load("en_core_web_sm")
-
-
 def generate_resume_tips(score, resume_text, job_keywords):
+    # Handle empty or non-list job_keywords
+    if not isinstance(job_keywords, list) or not job_keywords:
+        return "🔍 No job keywords provided. Focus on industry-specific skills and quantifiable achievements."
+
+    # Preprocess resume tokens (handle special characters, case-insensitive)
     doc_resume = nlp(resume_text.lower())
-    resume_lemmas = {
-        token.lemma_ for token in doc_resume if not token.is_stop and token.is_alpha}
-    job_lemmas = {nlp(kw.lower())[0].lemma_ for kw in job_keywords if nlp(
-        kw.lower())}  # Lemmatize job keywords
+    # Removed is_alpha check
+    resume_lemmas = {token.lemma_ for token in doc_resume if not token.is_stop}
 
-    missing_lemmas = [kw for kw in job_lemmas if kw not in resume_lemmas]
-    missing_original = [kw for kw in job_keywords if nlp(
-        kw.lower())[0].lemma_ in missing_lemmas]
+    # Process job keywords with deduplication and validation
+    keyword_lemma_map = {}
+    seen_keywords = set()
 
+    for kw in job_keywords:
+        # Skip non-strings and empty keywords
+        if not isinstance(kw, str) or not kw.strip():
+            continue
+
+        # Case-insensitive deduplication
+        kw_lower = kw.lower().strip()
+        if kw_lower in seen_keywords:
+            continue
+        seen_keywords.add(kw_lower)
+
+        # Lemmatize keyword
+        kw_doc = nlp(kw_lower)
+        if kw_doc:
+            lemma = kw_doc[0].lemma_
+            keyword_lemma_map[kw] = lemma  # Store original keyword with case
+
+    # Find missing keywords (original casing)
+    missing_keywords = [
+        original_kw for original_kw, lemma in keyword_lemma_map.items()
+        if lemma not in resume_lemmas
+    ]
+
+    # Grammar-optimized responses
     if score > 80:
-        return "🔥 Excellent match! Your resume is well-optimized."
+        return "🔥 Excellent match! Your resume demonstrates strong keyword alignment and clarity."
     elif score > 60:
-        if missing_original:
-            return f"✅ Good match! Consider adding keywords like: {', '.join(missing_original[:5])} (considering variations like '{', '.join(missing_lemmas[:5])}')."
+        if missing_keywords:
+            keyword_list = ", ".join(f"'{kw}'" for kw in missing_keywords[:5])
+            return (
+                f"✅ Good match! Consider adding: {keyword_list}. "
+                "Use variations like verbs/nouns (e.g., 'managed' and 'managing')."
+            )
         else:
-            return "✅ Good match! To make it even stronger, consider elaborating on your key achievements with quantifiable results and using more varied vocabulary."
+            return (
+                "✅ Good match! Enhance impact by:\n"
+                "- Adding metrics to achievements\n"
+                "- Using industry-specific action verbs\n"
+                "- Highlighting promotions/successes"
+            )
     else:
-        if missing_original:
-            return f"⚡ Low match! Focus on incorporating key skills such as: {', '.join(missing_original[:5])} (including forms like '{', '.join(missing_lemmas[:5])}')."
+        if missing_keywords:
+            keyword_list = ", ".join(f"'{kw}'" for kw in missing_keywords[:5])
+            return (
+                f"⚡ Needs improvement! Critical missing keywords: {keyword_list}.\n"
+                "Tips:\n"
+                "- Mirror exact phrases from job description\n"
+                "- Include both acronyms and full terms (e.g., 'SEO' and 'Search Engine Optimization')\n"
+                "- Add sections Like: "
+            )
         else:
-            return "⚡ Low match! Significantly enhance your skills section and integrate more industry-specific terminology, paying attention to different word forms."
+            return (
+                "⚡ Low match! Improve by:\n"
+                "- Using more industry jargon\n"
+                "- Adding certifications/licenses\n"
+                "- Quantifying work experience (e.g., 'Increased sales by 42%')"
+            )
 
 
 def check_sections(resume_text):
@@ -129,16 +224,20 @@ def check_sections(resume_text):
         list: A list of capitalized section names that appear to be missing.
     """
     section_patterns = {
-        "skills": r"\b(?:skills|technical proficiencies|core competencies)\b",
-        "experience": r"\b(?:experience|professional history|work history)\b",
-        "education": r"\b(?:education|academic background|qualifications)\b",
-        "projects": r"\b(?:projects|personal projects|portfolio)\b",
-        "certifications": r"\b(?:certifications|licenses|credentials)\b",
+        "Skills": r"\b(skills|technical proficiencies|core competencies|technical skills)\b",
+        "Experience": r"\b(experience|professional history|work history)\b",
+        "Education": r"\b(education|academic background|qualifications)\b",
+        "Projects": r"\b(projects|personal projects|portfolio)\b",
+        "Certifications": r"\b(certifications|certification|licenses|credentials)\b",
     }
+
+    resume_text_lower = resume_text.lower()
     missing_sections = []
+
     for section, pattern in section_patterns.items():
-        if not re.search(pattern, resume_text.lower()):
-            missing_sections.append(section.capitalize())
+        if not re.search(pattern, resume_text_lower, re.IGNORECASE):
+            missing_sections.append(section)
+
     return missing_sections
 
 # --- Main App Logic ---
@@ -172,7 +271,7 @@ def main():
             tips = generate_resume_tips(score, resume_text, job_keywords)
             missing_sections = check_sections(resume_text)
             if missing_sections:
-                tips += f" Consider adding sections: {', '.join(missing_sections)}."
+                tips += f" {', '.join(missing_sections)}."
             results.append({
                 "Resume": file.name,
                 "Match Score (%)": round(score, 2),
