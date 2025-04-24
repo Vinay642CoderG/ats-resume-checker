@@ -1,4 +1,0 @@
-{
-  "src": "/.*",
-  "dest": "project/app.py"
-}
